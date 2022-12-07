@@ -31,7 +31,7 @@ def authenticate_implicit_with_adc(project_id="your-google-cloud-project-id"):
 
 
 
-def list_blobs(bucket_name, project_id):
+def list_blobs(bucket_name:str, project_id:str) -> list(str):
     """Lists all the blobs in the bucket."""
     # bucket_name = "your-bucket-name"
 
@@ -41,9 +41,10 @@ def list_blobs(bucket_name, project_id):
     blobs = storage_client.list_blobs(bucket_name)
 
     # Note: The call returns a response only when the iterator is consumed.
-    for blob in blobs:
-        print(blob.name)
+    rval = [blob.name for blob in blobs]
+    return rval
 
 
 if __name__ == "__main__":
-  list_blobs('midi_data', '')
+  all_file_names = list_blobs('midi_data', '')
+  print(all_file_names)
