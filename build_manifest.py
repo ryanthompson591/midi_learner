@@ -1,49 +1,117 @@
 from google.cloud import storage
-import sys
+from google.cloud import bigquery
+from google.cloud.exceptions import NotFound
 
+from typing import List
 
-def authenticate_implicit_with_adc(project_id="your-google-cloud-project-id"):
-    """
-    When interacting with Google Cloud Client libraries, the library can auto-detect the
-    credentials to use.
+import constants
 
-    // TODO(Developer):
-    //  1. Before running this sample,
-    //  set up ADC as described in https://cloud.google.com/docs/authentication/external/set-up-adc
-    //  2. Replace the project variable.
-    //  3. Make sure that the user account or service account that you are using
-    //  has the required permissions. For this sample, you must have "storage.buckets.list".
-    Args:
-        project_id: The project id of your Google Cloud project.
-    """
+PROJECT_ID = 'midi-generator-fun-project'
+DATA_SET = 'input_data'
+MANIFEST_TABLE = 'manifest'
 
-    # This snippet demonstrates how to list buckets.
-    # *NOTE*: Replace the client created below with the client required for your application.
-    # Note that the credentials are not specified when constructing the client.
-    # Hence, the client library will look for credentials using ADC.
-    storage_client = storage.Client(project=project_id)
-    buckets = storage_client.list_buckets()
-    print("Buckets:")
-    for bucket in buckets:
-        print(bucket.name)
-    print("Listed all storage buckets.")
-
-
-
-
-def list_blobs(bucket_name, project_id):
+def list_blobs(bucket_name:str) -> List[str]:
     """Lists all the blobs in the bucket."""
-    # bucket_name = "your-bucket-name"
-
-    storage_client = storage.Client(project=project_id)
+    storage_client = storage.Client(project=PROJECT_ID)
 
     # Note: Client.list_blobs requires at least package version 1.17.0.
     blobs = storage_client.list_blobs(bucket_name)
 
     # Note: The call returns a response only when the iterator is consumed.
-    for blob in blobs:
-        print(blob.name)
+    return [blob.name for blob in blobs]
 
+def get_all_datasets(client) -> List[str]:
+    datasets = list(client.list_datasets())  # Make an API request.
+    return [dataset.dataset_id for dataset in datasets]
+
+
+def create_data_set(dataset_id:str):
+    # Construct a BigQuery client object.
+    client = bigquery.Client(project=PROJECT_ID)
+
+    if dataset_id in get_all_datasets(client):
+      print ('dataset {} already exists.'.format(dataset_id))
+      return
+
+    dataset_id = "{}.{}".format(client.project, dataset_id)
+
+    # Construct a full Dataset object to send to the API.
+    dataset = bigquery.Dataset(dataset_id)
+
+    # TODO(developer): Specify the geographic location where the dataset should reside.
+    dataset.location = constants.REGION
+
+    # Send the dataset to the API for creation, with an explicit timeout.
+    # Raises google.api_core.exceptions.Conflict if the Dataset already
+    # exists within the project.
+    dataset = client.create_dataset(dataset, timeout=30)  # Make an API request.
+    print("Created dataset {}.{}".format(client.project, dataset.dataset_id))
+
+
+def create_table(dataset_id, table_name):
+  client = bigquery.Client(project=PROJECT_ID)
+
+  dataset = client.get_dataset(dataset_id)
+
+  try:
+    client.get_table('{}.{}.{}'.format(PROJECT_ID,dataset_id,table_name))  # Make an API request.
+    print("Table {} already exists.".format(table_name))
+    return
+  except NotFound:
+    print("Table {} is not found.".format(table_name))
+
+  table_ref = dataset.table(table_name)
+  table = bigquery.Table(table_ref)
+
+  # TODO: encryption not set --- use bigquery.EncryptionConfiguration
+  table = client.create_table(table)  # API request
+
+def print_schema(dataset_id, table_name):
+  client = bigquery.Client(project=PROJECT_ID)
+  table = client.get_table('{}.{}.{}'.format(PROJECT_ID, dataset_id, table_name))
+
+  original_schema = table.schema
+  print ('got schema of length {}'.format(len(original_schema)))
+  names = set([field.name for field in original_schema])
+  print(names)
+
+def update_schema(dataset_id, table_name):
+  client = bigquery.Client(project=PROJECT_ID)
+  table = client.get_table('{}.{}.{}'.format(PROJECT_ID, dataset_id, table_name))
+
+  original_schema = table.schema
+
+  new_schema = original_schema[:]  # Creates a copy of the schema.
+  names = set([field.name for field in original_schema])
+
+  if 'url' not in names:
+    new_schema.append(bigquery.SchemaField("url", "STRING"))
+  if 'processed' not in names:
+    new_schema.append(bigquery.SchemaField('processed', 'boolean'))
+
+  table.schema = new_schema
+  table = client.update_table(table, ["schema"])  # Make an API request.
+
+
+def populate_manifest():
+  client = bigquery.Client(project=PROJECT_ID)
+  table = client.get_table('{}.{}.{}'.format(PROJECT_ID, DATA_SET, MANIFEST_TABLE))
+  all_files = list_blobs('midi_data')
+  print('adding all files total files - {}'.format(len(all_files)))
+
+  rows = [{u'url': filename, u'processed': False} for filename in all_files]
+  client.insert_rows(table, rows)
+
+def create_and_populate_manifest()
+  create_data_set('input_data')
+  create_table('input_data', 'manifest')
+  print_schema('input_data', 'manifest')
+  update_schema('input_data', 'manifest')
+  populate_manifest()
+
+def main():
+  #create_and_populate_manifest()
+  pass
 
 if __name__ == "__main__":
-  list_blobs('midi_data', '')
+  main()
