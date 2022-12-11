@@ -2,7 +2,7 @@ from google.cloud import bigquery
 from google.cloud.exceptions import NotFound
 import constants
 
-def create_table(dataset_id, table_name):
+def create_table(dataset_id, table_name, schema=None):
   client = bigquery.Client(project=constants.PROJECT_ID)
 
   dataset = client.get_dataset(dataset_id)
@@ -15,7 +15,7 @@ def create_table(dataset_id, table_name):
     print("Table {} is not found.".format(table_name))
 
   table_ref = dataset.table(table_name)
-  table = bigquery.Table(table_ref)
+  table = bigquery.Table(table_ref, schema=schema)
 
   # TODO: encryption not set --- use bigquery.EncryptionConfiguration
   table = client.create_table(table)  # API request
